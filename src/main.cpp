@@ -1,12 +1,16 @@
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
+#include <linmath.h>
 
 #include <types.hpp>
+#include <ktga.hpp>
 
 #include <limits>
 #include <vector>
 #include <tuple>
 #include <iostream>
+#include <fstream>
+#include <filesystem>
 
 struct Scope {
 	struct IMess {
@@ -316,6 +320,20 @@ struct Vertex {
     float u, v;
 };
 
+struct UniformBuffer {
+    mat4x4 model;
+    mat4x4 view;
+    mat4x4 proj;
+};
+
+struct Camera {
+    vec3 pos;
+    vec3 rot;
+    
+    float fov;
+    float near, far;
+};
+
 u32 findMemoryType(u32 typeBits, VkMemoryPropertyFlags flags, VkPhysicalDeviceMemoryProperties props) {
     for (u32 i = 0; i < props.memoryTypeCount; ++i) {
         if (typeBits & (1 << i) && (props.memoryTypes[i].propertyFlags & flags) == flags) {
@@ -332,6 +350,8 @@ int main(int argc, char** argv) {
     globals.DEBUG_MESSENGER = true;
     globals.FRAMES_IN_FLIGHT = 2;
     
+    std::filesystem::path path = std::filesystem::current_path();
+    
     glfwSetErrorCallback([](int error, const char* description) {
         std::cout << "GLFW error (" << error << "): " << description << std::endl;
     });
@@ -347,6 +367,8 @@ int main(int argc, char** argv) {
         return 1;
     }
     globals.scope.addMess(glfwDestroyWindow, window);
+    
+    std::filesystem::current_path(path);
     
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -656,44 +678,74 @@ int main(int argc, char** argv) {
     }
     
     const uint32_t vertexShaderCode[] = {
-        0x07230203,0x00010000,0x0008000b,0x00000025,0x00000000,0x00020011,0x00000001,0x0006000b,
+        0x07230203,0x00010000,0x0008000b,0x00000048,0x00000000,0x00020011,0x00000001,0x0006000b,
         0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
-        0x000b000f,0x00000000,0x00000004,0x6e69616d,0x00000000,0x0000000d,0x00000012,0x0000001c,
-        0x0000001d,0x00000021,0x00000023,0x00030003,0x00000002,0x000001c2,0x00040005,0x00000004,
-        0x6e69616d,0x00000000,0x00060005,0x0000000b,0x505f6c67,0x65567265,0x78657472,0x00000000,
-        0x00060006,0x0000000b,0x00000000,0x505f6c67,0x7469736f,0x006e6f69,0x00070006,0x0000000b,
-        0x00000001,0x505f6c67,0x746e696f,0x657a6953,0x00000000,0x00070006,0x0000000b,0x00000002,
-        0x435f6c67,0x4470696c,0x61747369,0x0065636e,0x00070006,0x0000000b,0x00000003,0x435f6c67,
-        0x446c6c75,0x61747369,0x0065636e,0x00030005,0x0000000d,0x00000000,0x00040005,0x00000012,
-        0x736f5061,0x00000000,0x00040005,0x0000001c,0x6c6f4376,0x0000726f,0x00040005,0x0000001d,
-        0x6c6f4361,0x0000726f,0x00030005,0x00000021,0x00565576,0x00030005,0x00000023,0x00565561,
-        0x00050048,0x0000000b,0x00000000,0x0000000b,0x00000000,0x00050048,0x0000000b,0x00000001,
-        0x0000000b,0x00000001,0x00050048,0x0000000b,0x00000002,0x0000000b,0x00000003,0x00050048,
-        0x0000000b,0x00000003,0x0000000b,0x00000004,0x00030047,0x0000000b,0x00000002,0x00040047,
-        0x00000012,0x0000001e,0x00000000,0x00040047,0x0000001c,0x0000001e,0x00000000,0x00040047,
-        0x0000001d,0x0000001e,0x00000001,0x00040047,0x00000021,0x0000001e,0x00000001,0x00040047,
-        0x00000023,0x0000001e,0x00000002,0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,
-        0x00030016,0x00000006,0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,0x00040015,
-        0x00000008,0x00000020,0x00000000,0x0004002b,0x00000008,0x00000009,0x00000001,0x0004001c,
-        0x0000000a,0x00000006,0x00000009,0x0006001e,0x0000000b,0x00000007,0x00000006,0x0000000a,
-        0x0000000a,0x00040020,0x0000000c,0x00000003,0x0000000b,0x0004003b,0x0000000c,0x0000000d,
-        0x00000003,0x00040015,0x0000000e,0x00000020,0x00000001,0x0004002b,0x0000000e,0x0000000f,
-        0x00000000,0x00040017,0x00000010,0x00000006,0x00000003,0x00040020,0x00000011,0x00000001,
-        0x00000010,0x0004003b,0x00000011,0x00000012,0x00000001,0x0004002b,0x00000006,0x00000014,
-        0x3f800000,0x00040020,0x00000019,0x00000003,0x00000007,0x00040020,0x0000001b,0x00000003,
-        0x00000010,0x0004003b,0x0000001b,0x0000001c,0x00000003,0x0004003b,0x00000011,0x0000001d,
-        0x00000001,0x00040017,0x0000001f,0x00000006,0x00000002,0x00040020,0x00000020,0x00000003,
-        0x0000001f,0x0004003b,0x00000020,0x00000021,0x00000003,0x00040020,0x00000022,0x00000001,
-        0x0000001f,0x0004003b,0x00000022,0x00000023,0x00000001,0x00050036,0x00000002,0x00000004,
-        0x00000000,0x00000003,0x000200f8,0x00000005,0x0004003d,0x00000010,0x00000013,0x00000012,
-        0x00050051,0x00000006,0x00000015,0x00000013,0x00000000,0x00050051,0x00000006,0x00000016,
-        0x00000013,0x00000001,0x00050051,0x00000006,0x00000017,0x00000013,0x00000002,0x00070050,
-        0x00000007,0x00000018,0x00000015,0x00000016,0x00000017,0x00000014,0x00050041,0x00000019,
-        0x0000001a,0x0000000d,0x0000000f,0x0003003e,0x0000001a,0x00000018,0x0004003d,0x00000010,
-        0x0000001e,0x0000001d,0x0003003e,0x0000001c,0x0000001e,0x0004003d,0x0000001f,0x00000024,
-        0x00000023,0x0003003e,0x00000021,0x00000024,0x000100fd,0x00010038
+        0x000c000f,0x00000000,0x00000004,0x6e69616d,0x00000000,0x0000000d,0x00000021,0x0000002c,
+        0x0000003f,0x00000040,0x00000044,0x00000046,0x00030003,0x00000002,0x000001c2,0x00040005,
+        0x00000004,0x6e69616d,0x00000000,0x00060005,0x0000000b,0x505f6c67,0x65567265,0x78657472,
+        0x00000000,0x00060006,0x0000000b,0x00000000,0x505f6c67,0x7469736f,0x006e6f69,0x00070006,
+        0x0000000b,0x00000001,0x505f6c67,0x746e696f,0x657a6953,0x00000000,0x00070006,0x0000000b,
+        0x00000002,0x435f6c67,0x4470696c,0x61747369,0x0065636e,0x00070006,0x0000000b,0x00000003,
+        0x435f6c67,0x446c6c75,0x61747369,0x0065636e,0x00030005,0x0000000d,0x00000000,0x00030005,
+        0x00000011,0x004f4255,0x00050006,0x00000011,0x00000000,0x65646f6d,0x0000006c,0x00050006,
+        0x00000011,0x00000001,0x77656976,0x00000000,0x00050006,0x00000011,0x00000002,0x6a6f7270,
+        0x00000000,0x00030005,0x00000013,0x006f6275,0x00040005,0x00000021,0x736f5061,0x00000000,
+        0x00040005,0x0000002c,0x736f5076,0x00000000,0x00040005,0x0000003f,0x6c6f4376,0x0000726f,
+        0x00040005,0x00000040,0x6c6f4361,0x0000726f,0x00030005,0x00000044,0x00565576,0x00030005,
+        0x00000046,0x00565561,0x00050048,0x0000000b,0x00000000,0x0000000b,0x00000000,0x00050048,
+        0x0000000b,0x00000001,0x0000000b,0x00000001,0x00050048,0x0000000b,0x00000002,0x0000000b,
+        0x00000003,0x00050048,0x0000000b,0x00000003,0x0000000b,0x00000004,0x00030047,0x0000000b,
+        0x00000002,0x00040048,0x00000011,0x00000000,0x00000005,0x00050048,0x00000011,0x00000000,
+        0x00000023,0x00000000,0x00050048,0x00000011,0x00000000,0x00000007,0x00000010,0x00040048,
+        0x00000011,0x00000001,0x00000005,0x00050048,0x00000011,0x00000001,0x00000023,0x00000040,
+        0x00050048,0x00000011,0x00000001,0x00000007,0x00000010,0x00040048,0x00000011,0x00000002,
+        0x00000005,0x00050048,0x00000011,0x00000002,0x00000023,0x00000080,0x00050048,0x00000011,
+        0x00000002,0x00000007,0x00000010,0x00030047,0x00000011,0x00000002,0x00040047,0x00000013,
+        0x00000022,0x00000000,0x00040047,0x00000013,0x00000021,0x00000000,0x00040047,0x00000021,
+        0x0000001e,0x00000000,0x00040047,0x0000002c,0x0000001e,0x00000000,0x00040047,0x0000003f,
+        0x0000001e,0x00000001,0x00040047,0x00000040,0x0000001e,0x00000001,0x00040047,0x00000044,
+        0x0000001e,0x00000002,0x00040047,0x00000046,0x0000001e,0x00000002,0x00020013,0x00000002,
+        0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,0x00000020,0x00040017,0x00000007,
+        0x00000006,0x00000004,0x00040015,0x00000008,0x00000020,0x00000000,0x0004002b,0x00000008,
+        0x00000009,0x00000001,0x0004001c,0x0000000a,0x00000006,0x00000009,0x0006001e,0x0000000b,
+        0x00000007,0x00000006,0x0000000a,0x0000000a,0x00040020,0x0000000c,0x00000003,0x0000000b,
+        0x0004003b,0x0000000c,0x0000000d,0x00000003,0x00040015,0x0000000e,0x00000020,0x00000001,
+        0x0004002b,0x0000000e,0x0000000f,0x00000000,0x00040018,0x00000010,0x00000007,0x00000004,
+        0x0005001e,0x00000011,0x00000010,0x00000010,0x00000010,0x00040020,0x00000012,0x00000002,
+        0x00000011,0x0004003b,0x00000012,0x00000013,0x00000002,0x0004002b,0x0000000e,0x00000014,
+        0x00000002,0x00040020,0x00000015,0x00000002,0x00000010,0x0004002b,0x0000000e,0x00000018,
+        0x00000001,0x00040017,0x0000001f,0x00000006,0x00000003,0x00040020,0x00000020,0x00000001,
+        0x0000001f,0x0004003b,0x00000020,0x00000021,0x00000001,0x0004002b,0x00000006,0x00000023,
+        0x3f800000,0x00040020,0x00000029,0x00000003,0x00000007,0x00040020,0x0000002b,0x00000003,
+        0x0000001f,0x0004003b,0x0000002b,0x0000002c,0x00000003,0x0004003b,0x0000002b,0x0000003f,
+        0x00000003,0x0004003b,0x00000020,0x00000040,0x00000001,0x00040017,0x00000042,0x00000006,
+        0x00000002,0x00040020,0x00000043,0x00000003,0x00000042,0x0004003b,0x00000043,0x00000044,
+        0x00000003,0x00040020,0x00000045,0x00000001,0x00000042,0x0004003b,0x00000045,0x00000046,
+        0x00000001,0x00050036,0x00000002,0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,
+        0x00050041,0x00000015,0x00000016,0x00000013,0x00000014,0x0004003d,0x00000010,0x00000017,
+        0x00000016,0x00050041,0x00000015,0x00000019,0x00000013,0x00000018,0x0004003d,0x00000010,
+        0x0000001a,0x00000019,0x00050092,0x00000010,0x0000001b,0x00000017,0x0000001a,0x00050041,
+        0x00000015,0x0000001c,0x00000013,0x0000000f,0x0004003d,0x00000010,0x0000001d,0x0000001c,
+        0x00050092,0x00000010,0x0000001e,0x0000001b,0x0000001d,0x0004003d,0x0000001f,0x00000022,
+        0x00000021,0x00050051,0x00000006,0x00000024,0x00000022,0x00000000,0x00050051,0x00000006,
+        0x00000025,0x00000022,0x00000001,0x00050051,0x00000006,0x00000026,0x00000022,0x00000002,
+        0x00070050,0x00000007,0x00000027,0x00000024,0x00000025,0x00000026,0x00000023,0x00050091,
+        0x00000007,0x00000028,0x0000001e,0x00000027,0x00050041,0x00000029,0x0000002a,0x0000000d,
+        0x0000000f,0x0003003e,0x0000002a,0x00000028,0x00050041,0x00000015,0x0000002d,0x00000013,
+        0x00000014,0x0004003d,0x00000010,0x0000002e,0x0000002d,0x00050041,0x00000015,0x0000002f,
+        0x00000013,0x00000018,0x0004003d,0x00000010,0x00000030,0x0000002f,0x00050092,0x00000010,
+        0x00000031,0x0000002e,0x00000030,0x00050041,0x00000015,0x00000032,0x00000013,0x0000000f,
+        0x0004003d,0x00000010,0x00000033,0x00000032,0x00050092,0x00000010,0x00000034,0x00000031,
+        0x00000033,0x0004003d,0x0000001f,0x00000035,0x00000021,0x00050051,0x00000006,0x00000036,
+        0x00000035,0x00000000,0x00050051,0x00000006,0x00000037,0x00000035,0x00000001,0x00050051,
+        0x00000006,0x00000038,0x00000035,0x00000002,0x00070050,0x00000007,0x00000039,0x00000036,
+        0x00000037,0x00000038,0x00000023,0x00050091,0x00000007,0x0000003a,0x00000034,0x00000039,
+        0x00050051,0x00000006,0x0000003b,0x0000003a,0x00000000,0x00050051,0x00000006,0x0000003c,
+        0x0000003a,0x00000001,0x00050051,0x00000006,0x0000003d,0x0000003a,0x00000002,0x00060050,
+        0x0000001f,0x0000003e,0x0000003b,0x0000003c,0x0000003d,0x0003003e,0x0000002c,0x0000003e,
+        0x0004003d,0x0000001f,0x00000041,0x00000040,0x0003003e,0x0000003f,0x00000041,0x0004003d,
+        0x00000042,0x00000047,0x00000046,0x0003003e,0x00000044,0x00000047,0x000100fd,0x00010038
     };
-
     
     VkShaderModuleCreateInfo shaderModuleCreateInfo = {};
     shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -706,24 +758,28 @@ int main(int argc, char** argv) {
     }
     
     const uint32_t fragmentShaderCode[] = {
-        0x07230203,0x00010000,0x0008000b,0x00000016,0x00000000,0x00020011,0x00000001,0x0006000b,
+        0x07230203,0x00010000,0x0008000b,0x00000018,0x00000000,0x00020011,0x00000001,0x0006000b,
         0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
-        0x0008000f,0x00000004,0x00000004,0x6e69616d,0x00000000,0x00000009,0x0000000c,0x00000015,
-        0x00030010,0x00000004,0x00000007,0x00030003,0x00000002,0x000001c2,0x00040005,0x00000004,
-        0x6e69616d,0x00000000,0x00040005,0x00000009,0x6c6f436f,0x0000726f,0x00040005,0x0000000c,
-        0x6c6f4376,0x0000726f,0x00030005,0x00000015,0x00565576,0x00040047,0x00000009,0x0000001e,
-        0x00000000,0x00040047,0x0000000c,0x0000001e,0x00000000,0x00040047,0x00000015,0x0000001e,
-        0x00000001,0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,
-        0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,0x00040020,0x00000008,0x00000003,
-        0x00000007,0x0004003b,0x00000008,0x00000009,0x00000003,0x00040017,0x0000000a,0x00000006,
-        0x00000003,0x00040020,0x0000000b,0x00000001,0x0000000a,0x0004003b,0x0000000b,0x0000000c,
-        0x00000001,0x0004002b,0x00000006,0x0000000e,0x3f800000,0x00040017,0x00000013,0x00000006,
-        0x00000002,0x00040020,0x00000014,0x00000001,0x00000013,0x0004003b,0x00000014,0x00000015,
-        0x00000001,0x00050036,0x00000002,0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,
-        0x0004003d,0x0000000a,0x0000000d,0x0000000c,0x00050051,0x00000006,0x0000000f,0x0000000d,
-        0x00000000,0x00050051,0x00000006,0x00000010,0x0000000d,0x00000001,0x00050051,0x00000006,
-        0x00000011,0x0000000d,0x00000002,0x00070050,0x00000007,0x00000012,0x0000000f,0x00000010,
-        0x00000011,0x0000000e,0x0003003e,0x00000009,0x00000012,0x000100fd,0x00010038
+        0x0009000f,0x00000004,0x00000004,0x6e69616d,0x00000000,0x00000009,0x00000011,0x00000016,
+        0x00000017,0x00030010,0x00000004,0x00000007,0x00030003,0x00000002,0x000001c2,0x00040005,
+        0x00000004,0x6e69616d,0x00000000,0x00040005,0x00000009,0x6c6f436f,0x0000726f,0x00050005,
+        0x0000000d,0x78655475,0x65727574,0x00000000,0x00030005,0x00000011,0x00565576,0x00040005,
+        0x00000016,0x736f5076,0x00000000,0x00040005,0x00000017,0x6c6f4376,0x0000726f,0x00040047,
+        0x00000009,0x0000001e,0x00000000,0x00040047,0x0000000d,0x00000022,0x00000000,0x00040047,
+        0x0000000d,0x00000021,0x00000001,0x00040047,0x00000011,0x0000001e,0x00000002,0x00040047,
+        0x00000016,0x0000001e,0x00000000,0x00040047,0x00000017,0x0000001e,0x00000001,0x00020013,
+        0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,0x00000020,0x00040017,
+        0x00000007,0x00000006,0x00000004,0x00040020,0x00000008,0x00000003,0x00000007,0x0004003b,
+        0x00000008,0x00000009,0x00000003,0x00090019,0x0000000a,0x00000006,0x00000001,0x00000000,
+        0x00000000,0x00000000,0x00000001,0x00000000,0x0003001b,0x0000000b,0x0000000a,0x00040020,
+        0x0000000c,0x00000000,0x0000000b,0x0004003b,0x0000000c,0x0000000d,0x00000000,0x00040017,
+        0x0000000f,0x00000006,0x00000002,0x00040020,0x00000010,0x00000001,0x0000000f,0x0004003b,
+        0x00000010,0x00000011,0x00000001,0x00040017,0x00000014,0x00000006,0x00000003,0x00040020,
+        0x00000015,0x00000001,0x00000014,0x0004003b,0x00000015,0x00000016,0x00000001,0x0004003b,
+        0x00000015,0x00000017,0x00000001,0x00050036,0x00000002,0x00000004,0x00000000,0x00000003,
+        0x000200f8,0x00000005,0x0004003d,0x0000000b,0x0000000e,0x0000000d,0x0004003d,0x0000000f,
+        0x00000012,0x00000011,0x00050057,0x00000007,0x00000013,0x0000000e,0x00000012,0x0003003e,
+        0x00000009,0x00000013,0x000100fd,0x00010038
     };
     
     shaderModuleCreateInfo.codeSize = sizeof(fragmentShaderCode);
@@ -853,12 +909,31 @@ int main(int argc, char** argv) {
     dynamicState.dynamicStateCount = 2;
     dynamicState.pDynamicStates = dynamicStates;
     
+    VkDescriptorSetLayoutBinding descriptorSetLayoutBindings[2] = {};
+    descriptorSetLayoutBindings[0].binding = 0;
+    descriptorSetLayoutBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorSetLayoutBindings[0].descriptorCount = 1;
+    descriptorSetLayoutBindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    descriptorSetLayoutBindings[1].binding = 1;
+    descriptorSetLayoutBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorSetLayoutBindings[1].descriptorCount = 1;
+    descriptorSetLayoutBindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    
+    VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = {};
+    descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    descriptorSetLayoutCreateInfo.bindingCount = 2;
+    descriptorSetLayoutCreateInfo.pBindings = descriptorSetLayoutBindings;
+    
+    VkDescriptorSetLayout descriptorSetLayout;
+    if (vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+        return 1;
+    }
+    globals.scope.addMess(vkDestroyDescriptorSetLayout, device, descriptorSetLayout, nullptr);
+    
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
     pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutCreateInfo.setLayoutCount = 0;
-    pipelineLayoutCreateInfo.pSetLayouts = nullptr;
-    pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
-    pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
+    pipelineLayoutCreateInfo.setLayoutCount = 1;
+    pipelineLayoutCreateInfo.pSetLayouts = &descriptorSetLayout;
     
     VkPipelineLayout pipelineLayout;
     if (vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
@@ -992,20 +1067,29 @@ int main(int argc, char** argv) {
     Vertex vertices[] = {
         {
             -1.0f, -1.0f, 0.0f,
-            1.0f, 1.0f, 0.0f
+            1.0f, 1.0f, 0.0f,
+            0.0f, 0.0f
         },
         {
             1.0f, -1.0f, 0.0f,
-            1.0f, 0.0f, 1.0f
+            1.0f, 0.0f, 1.0f,
+            1.0f, 0.0f
         },
         {
-            0.0f, 1.0f, 0.0f,
-            0.0f, 1.0f, 1.0f
+            -1.0f, 1.0f, 0.0f,
+            1.0f, 1.0f, 1.0f,
+            0.0f, 1.0f
+        },
+        {
+            1.0f, 1.0f, 0.0f,
+            0.0f, 1.0f, 1.0f,
+            1.0f, 1.0f
         }
     };
     
     u32 indices[] = {
-        0, 1, 2
+        0, 1, 2,
+        1, 2, 3,
     };
     
     VkBufferCreateInfo bufferCreateInfo = {};
@@ -1072,6 +1156,7 @@ int main(int argc, char** argv) {
     if (vkCreateCommandPool(device, &transferCommandPoolCreateInfo, nullptr, &transferCommandPool) != VK_SUCCESS) {
         return 1;
     }
+    globals.scope.addMess(vkDestroyCommandPool, device, transferCommandPool, nullptr);
     
     VkCommandBufferAllocateInfo transferCommandBufferAllocateInfo = {};
     transferCommandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -1086,7 +1171,6 @@ int main(int argc, char** argv) {
     
     VkCommandBufferBeginInfo transferCommandBufferBeginInfo = {};
     transferCommandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    transferCommandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     
     if (vkBeginCommandBuffer(transferCommandBuffer, &transferCommandBufferBeginInfo) != VK_SUCCESS) {
         return 1;
@@ -1107,15 +1191,289 @@ int main(int argc, char** argv) {
     vkQueueSubmit(transferQueue, 1, &transferSubmitInfo, nullptr);
     vkQueueWaitIdle(transferQueue);
     
-    vkFreeCommandBuffers(device, transferCommandPool, 1, &transferCommandBuffer);
-    vkDestroyCommandPool(device, transferCommandPool, nullptr);
+    vkDestroyBuffer(device, uploadBuffer, nullptr);
+    vkFreeMemory(device, uploadMemory, nullptr);
+    
+    VkDescriptorPoolSize descriptorPoolSizes[2];
+    descriptorPoolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorPoolSizes[0].descriptorCount = static_cast<u32>(globals.FRAMES_IN_FLIGHT);
+    descriptorPoolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorPoolSizes[1].descriptorCount = static_cast<u32>(globals.FRAMES_IN_FLIGHT);
+    
+    VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {};
+    descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descriptorPoolCreateInfo.maxSets = globals.FRAMES_IN_FLIGHT;
+    descriptorPoolCreateInfo.poolSizeCount = 2;
+    descriptorPoolCreateInfo.pPoolSizes = descriptorPoolSizes;
+    descriptorPoolCreateInfo.maxSets = globals.FRAMES_IN_FLIGHT;
+    
+    VkDescriptorPool descriptorPool;
+    if (vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+        return 1;
+    }
+    globals.scope.addMess(vkDestroyDescriptorPool, device, descriptorPool, nullptr);
+    
+    std::vector<VkDescriptorSetLayout> descriptorSetLayouts(globals.FRAMES_IN_FLIGHT, descriptorSetLayout);
+    VkDescriptorSetAllocateInfo descriptorSetAllocateInfo = {};
+    descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descriptorSetAllocateInfo.descriptorPool = descriptorPool;
+    descriptorSetAllocateInfo.descriptorSetCount = static_cast<u32>(globals.FRAMES_IN_FLIGHT);
+    descriptorSetAllocateInfo.pSetLayouts = descriptorSetLayouts.data();
+    
+    std::vector<VkDescriptorSet> descriptorSets(globals.FRAMES_IN_FLIGHT);
+    if (vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, descriptorSets.data()) != VK_SUCCESS) {
+        return 1;
+    }
+    
+    std::cout << std::filesystem::current_path();
+    
+    ktga_t ktga {};
+    {
+        std::ifstream file("assets/test.tga", std::ios::ate | std::ios::binary);
+        if (!file.is_open()) {
+            std::cout << "Failed to open assets/test.tga\n";
+            throw std::runtime_error("Failed to open test.tga");
+        }
+
+        size_t size = file.tellg();
+        std::vector<unsigned char> bytes(size);
+        file.seekg(0);
+        file.read(reinterpret_cast<char*>(bytes.data()), size);
+        file.close();
+
+        int ret = ktga_load(&ktga, (void*) bytes.data(), bytes.size());
+        if (ret != 0) {
+            std::cout << "Failed to load assets/test.tga\n" << ret;
+            throw std::runtime_error("Failed to load test.tga");
+        }
+    }
+    
+    bufferCreateInfo.size = ktga.header.img_w * ktga.header.img_h * (ktga.header.bpp / 8);
+    bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    
+    if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &uploadBuffer) != VK_SUCCESS) {
+        return 1;
+    }
+    
+    vkGetBufferMemoryRequirements(device, uploadBuffer, &memoryRequirements);
+    
+    memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memoryAllocateInfo.allocationSize = memoryRequirements.size;
+    memoryAllocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memoryProperties);
+    
+    if (vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &uploadMemory) != VK_SUCCESS) {
+        return 1;
+    }
+    
+    vkBindBufferMemory(device, uploadBuffer, uploadMemory, 0);
+    
+    if (vkMapMemory(device, uploadMemory, 0, memoryRequirements.size, 0, &uploadData) != VK_SUCCESS) {
+        return 1;
+    }
+    memcpy(uploadData, ktga.bitmap, memoryRequirements.size);
+    vkUnmapMemory(device, uploadMemory);
+    
+    VkImage image;
+    VkDeviceMemory imageMemory;
+    VkSampler imageSampler;
+    
+    VkImageCreateInfo imageCreateInfo = {};
+    imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageCreateInfo.format = VK_FORMAT_B8G8R8A8_SRGB;
+    imageCreateInfo.extent.width = ktga.header.img_w;
+    imageCreateInfo.extent.height = ktga.header.img_h;
+    imageCreateInfo.extent.depth = 1;
+    imageCreateInfo.mipLevels = 1;
+    imageCreateInfo.arrayLayers = 1;
+    imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageCreateInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    
+    if (vkCreateImage(device, &imageCreateInfo, nullptr, &image) != VK_SUCCESS) {
+        return 1;
+    }
+    
+    vkGetImageMemoryRequirements(device, image, &memoryRequirements);
+    
+    memoryAllocateInfo.allocationSize = memoryRequirements.size;
+    memoryAllocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memoryProperties);
+    
+    if (vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &imageMemory) != VK_SUCCESS) {
+        return 1;
+    }
+    
+    vkBindImageMemory(device, image, imageMemory, 0);
+    
+    globals.scope.addMess(vkFreeMemory, device, imageMemory, nullptr);
+    globals.scope.addMess(vkDestroyImage, device, image, nullptr);
+    
+    transferCommandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    
+    if (vkBeginCommandBuffer(transferCommandBuffer, &transferCommandBufferBeginInfo) != VK_SUCCESS) {
+        return 1;
+    }
+    
+    VkImageMemoryBarrier imageMemoryBarrier = {};
+    imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    imageMemoryBarrier.srcAccessMask = 0;
+    imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imageMemoryBarrier.image = image;
+    imageMemoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageMemoryBarrier.subresourceRange.levelCount = 1;
+    imageMemoryBarrier.subresourceRange.layerCount = 1;
+    
+    vkCmdPipelineBarrier(transferCommandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+    
+    VkBufferImageCopy bufferImageCopyRegion = {};
+    bufferImageCopyRegion.bufferOffset = 0;
+    bufferImageCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    bufferImageCopyRegion.imageSubresource.layerCount = 1;
+    bufferImageCopyRegion.imageExtent.width = ktga.header.img_w;
+    bufferImageCopyRegion.imageExtent.height = ktga.header.img_h;
+    bufferImageCopyRegion.imageExtent.depth = 1;
+    
+    vkCmdCopyBufferToImage(transferCommandBuffer, uploadBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bufferImageCopyRegion);
+    
+    imageMemoryBarrier.srcAccessMask = imageMemoryBarrier.dstAccessMask;
+    imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    imageMemoryBarrier.oldLayout = imageMemoryBarrier.newLayout;
+    imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    
+    vkCmdPipelineBarrier(transferCommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+    
+    vkEndCommandBuffer(transferCommandBuffer);
+    
+    transferSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    transferSubmitInfo.commandBufferCount = 1;
+    transferSubmitInfo.pCommandBuffers = &transferCommandBuffer;
+    
+    vkQueueSubmit(transferQueue, 1, &transferSubmitInfo, nullptr);
+    vkQueueWaitIdle(transferQueue);
     
     vkDestroyBuffer(device, uploadBuffer, nullptr);
     vkFreeMemory(device, uploadMemory, nullptr);
+    
+    VkImageViewCreateInfo imageViewCreateInfo = {};
+    imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    imageViewCreateInfo.image = image;
+    imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    imageViewCreateInfo.format = VK_FORMAT_B8G8R8A8_SRGB;
+    imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageViewCreateInfo.subresourceRange.layerCount = 1;
+    imageViewCreateInfo.subresourceRange.levelCount = 1;
+    
+    VkImageView imageView;
+    if (vkCreateImageView(device, &imageViewCreateInfo, nullptr, &imageView) != VK_SUCCESS) {
+        return 1;
+    }
+    globals.scope.addMess(vkDestroyImageView, device, imageView, nullptr);
+    
+    VkSamplerCreateInfo samplerCreateInfo = {};
+    samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerCreateInfo.magFilter = VK_FILTER_NEAREST;
+    samplerCreateInfo.minFilter = VK_FILTER_NEAREST;
+    samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerCreateInfo.mipLodBias = 0.0f;
+    samplerCreateInfo.anisotropyEnable = VK_FALSE;
+    samplerCreateInfo.maxAnisotropy = 1.0f;
+    samplerCreateInfo.compareEnable = VK_FALSE;
+    samplerCreateInfo.compareOp = VK_COMPARE_OP_LESS;
+    samplerCreateInfo.minLod = 0.0f;
+    samplerCreateInfo.maxLod = 0.0f;
+    
+    if (vkCreateSampler(device, &samplerCreateInfo, nullptr, &imageSampler) != VK_SUCCESS) {
+        return 1;
+    }
+    globals.scope.addMess(vkDestroySampler, device, imageSampler, nullptr);
+    
+    std::vector<VkBuffer> uniformBuffers(globals.FRAMES_IN_FLIGHT);
+    std::vector<VkDeviceMemory> uniformMemories(globals.FRAMES_IN_FLIGHT);
+    std::vector<void*> uniformMapped(globals.FRAMES_IN_FLIGHT);
+    
+    for (u32 i = 0; i < globals.FRAMES_IN_FLIGHT; ++i) {
+        VkBufferCreateInfo info = {};
+        info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        info.size = sizeof(UniformBuffer);
+        info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        
+        if (vkCreateBuffer(device, &info, nullptr, &uniformBuffers[i]) != VK_SUCCESS) {
+            return 1;
+        }
+        
+        vkGetBufferMemoryRequirements(device, uniformBuffers[i], &memoryRequirements);
+        
+        VkMemoryAllocateInfo memoryInfo = {};
+        memoryInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        memoryInfo.allocationSize = memoryRequirements.size;
+        memoryInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memoryProperties);
+        
+        if (vkAllocateMemory(device, &memoryInfo, nullptr, &uniformMemories[i]) != VK_SUCCESS) {
+            return 1;
+        }
+        globals.scope.addMess(vkFreeMemory, device, uniformMemories[i], nullptr);
+        globals.scope.addMess(vkDestroyBuffer, device, uniformBuffers[i], nullptr);
+        
+        vkBindBufferMemory(device, uniformBuffers[i], uniformMemories[i], 0);
+        vkMapMemory(device, uniformMemories[i], 0, sizeof(UniformBuffer), 0, &uniformMapped[i]);
+        
+        VkDescriptorBufferInfo bufferInfo = {};
+        bufferInfo.buffer = uniformBuffers[i];
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBuffer);
+        
+        VkWriteDescriptorSet sets[2] = {};
+        sets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        sets[0].dstSet = descriptorSets[i];
+        sets[0].dstBinding = 0;
+        sets[0].dstArrayElement = 0;
+        sets[0].descriptorCount = 1;
+        sets[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        sets[0].pBufferInfo = &bufferInfo;
+        
+        VkDescriptorImageInfo imageInfo = {};
+        imageInfo.imageView = imageView;
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.sampler = imageSampler;
+        
+        sets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        sets[1].dstSet = descriptorSets[i];
+        sets[1].dstBinding = 1;
+        sets[1].dstArrayElement = 0;
+        sets[1].descriptorCount = 1;
+        sets[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        sets[1].pImageInfo = &imageInfo;
+        
+        vkUpdateDescriptorSets(device, 2, sets, 0, nullptr);
+    }
+    
+    UniformBuffer uniform = {};
+    Camera camera = {};
+    camera.fov = 75.0f;
+    camera.near = 0.01f;
+    camera.far = 1000.0f;
 
 	usize currentFrameInFlight = 0;
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
+        mat4x4_identity(uniform.model);
+        mat4x4_identity(uniform.view);
+        mat4x4_rotate_X(uniform.view, uniform.view, camera.rot[0]);
+        mat4x4_rotate_Y(uniform.view, uniform.view, camera.rot[1]);
+        mat4x4_rotate_Z(uniform.view, uniform.view, camera.rot[2]);
+        mat4x4_translate_in_place(uniform.view, camera.pos[0], camera.pos[1], camera.pos[2]);
+        mat4x4_identity(uniform.proj);
 
 		int width, height;
 		glfwGetFramebufferSize(window, &width, &height);
@@ -1166,15 +1524,19 @@ int main(int argc, char** argv) {
 		renderPassBeginInfo.renderArea.extent = swapchain.currentExtent;
 		renderPassBeginInfo.clearValueCount = 1;
 		renderPassBeginInfo.pClearValues = &clearColor;
+        
+        memcpy(uniformMapped[currentFrameInFlight], &uniform, sizeof(UniformBuffer));
 
 		vkCmdBeginRenderPass(graphicsCommandBuffers[currentFrameInFlight], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdSetViewport(graphicsCommandBuffers[currentFrameInFlight], 0, 1, &viewport);
         vkCmdSetScissor(graphicsCommandBuffers[currentFrameInFlight], 0, 1, &scissor);
 		vkCmdBindPipeline(graphicsCommandBuffers[currentFrameInFlight], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(graphicsCommandBuffers[currentFrameInFlight], 0, 1, &meshBuffer, &offset);
         vkCmdBindIndexBuffer(graphicsCommandBuffers[currentFrameInFlight], meshBuffer, sizeof(vertices), VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(graphicsCommandBuffers[currentFrameInFlight], 3, 1, 0, 0, 0);
+        vkCmdBindDescriptorSets(graphicsCommandBuffers[currentFrameInFlight], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrameInFlight], 0, nullptr);
+        vkCmdDrawIndexed(graphicsCommandBuffers[currentFrameInFlight], sizeof(indices) / sizeof(indices[0]), 1, 0, 0, 0);
 		
 		vkCmdEndRenderPass(graphicsCommandBuffers[currentFrameInFlight]);
 		if (vkEndCommandBuffer(graphicsCommandBuffers[currentFrameInFlight]) != VK_SUCCESS) {
